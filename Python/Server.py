@@ -13,6 +13,7 @@ class Server:
         self.points_presence = ['10.0.8.2,10.0.9.2,10.0.11.2']
         self.graph = nx.DiGraph()
         self.ip_to_node = {}
+        self.tree = None 
         self.node_to_ips = {}
 
     
@@ -27,12 +28,13 @@ class Server:
     def server(self):
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         server_socket.bind(('0.0.0.0', 24000))
-        print(f"Servidor ouvindo...")
+        #print(f"Servidor ouvindo...")
 
         while True:
             # Escuta por mensagens de qualquer cliente
             message, client_address = server_socket.recvfrom(1024)
             #print(f"Recebido de {client_address}: {message.decode()}")
+            client_ip = client_address[0]
             
             # Verifica se a mensagem recebida é "HELLO"
             if message.decode().strip() == "Hello Neighbor":
@@ -40,8 +42,51 @@ class Server:
                 response = f"HELLO {client_address[0]}"
                 server_socket.sendto(response.encode(), client_address)
                 #print(f"Resposta enviada para {client_address}")
-            else:
-                print("Mensagem recebida não é a esperada, aguardando nova mensagem.")
+            if message.decode().startswith("REQ:"):
+                print(message)
+                data = message.decode().split(":", 1)[1]  
+                path_str, videofile = data.split("-", 1)  
+
+                print("Original Path String:", path_str)
+                print("Video File:", videofile)
+
+
+                bruh = "Stream Packet" # For Simulation
+
+                response_message2 = f"STREAM:{path_str}-{bruh}"
+                server_socket.sendto(response_message2.encode(),client_address)
+                print("Sending it back")
+                print(f"{client_address}")
+
+
+                """
+                node = self.get_node_by_ip(client_ip)
+                node_host = self.get_node_by_ip('10.0.17.10')
+                start_node = node_host
+                end_node = node
+                if start_node in self.graph.nodes and end_node in self.graph.nodes:
+                    path, total_time = self.find_shortest_path(start_node, end_node)
+                    path2, total_time2 = self.find_shortest_path_with_ips(start_node,end_node)
+                    print(f"Path: {path} \n Time: {total_time}")
+                    print(f"Path: {path2} \n Time: {total_time2}")
+
+                    content = message.split("REQ: ")[1].strip()
+                    videofile, client_ip2 = content.split(",")
+
+                    paths,dads = self.find_all_paths_and_parents(start_node,'10','10')
+
+                       
+
+
+                    path = path[1:]  
+                    path2first = path2[0]
+                    next = path2first[1]
+                    print(next)
+                    path2 = path2[1:]
+                    response_message2 = f"STREAM: {client_ip2}, bruh, {path2}"
+                    server_socket.sendto(response_message2.encode(), (next, 24000))
+
+                """
 
 
 
@@ -52,7 +97,7 @@ class Server:
             if record['origin'] == origin and record['dest'] == dest:
                 # Update the time if found
                 record['time'] = time
-                print(f"Updated time for connection from {origin} to {dest} to {time}")
+                #print(f"Updated time for connection from {origin} to {dest} to {time}")
                 return
 
         # If no existing entry is found, create a new record
@@ -69,7 +114,7 @@ class Server:
         
         # Add the new record to the log
         self.connection_data_log.append(connection_info)
-        print(f"Added new record for connection from {origin} to {dest} with time: {time}")
+        #print(f"Added new record for connection from {origin} to {dest} with time: {time}")
 
         self.add_connection_to_graph(origin_node,dest_node,time)
 
@@ -101,11 +146,11 @@ class Server:
             path = nx.dijkstra_path(self.graph, source=start_node, target=end_node, weight='weight')
             total_time = nx.dijkstra_path_length(self.graph, source=start_node, target=end_node, weight='weight')
             
-            print(f"Shortest path from {start_node} to {end_node}: {path}")
-            print(f"Total time for the path: {total_time}")
+            #print(f"Shortest path from {start_node} to {end_node}: {path}")
+            #print(f"Total time for the path: {total_time}")
             return path, total_time
         except nx.NetworkXNoPath:
-            print(f"No path found between {start_node} and {end_node}")
+            #print(f"No path found between {start_node} and {end_node}")
             return None, None
         
     def find_shortest_path_with_ips(self, start_node, end_node):
@@ -129,37 +174,133 @@ class Server:
                         ip_path.append((record["origin"], record["dest"]))
                         break
             
-            print(f"Shortest path (IPs) from {start_node} to {end_node}: {ip_path}")
-            print(f"Total time for the path: {total_time}")
+            #print(f"Shortest path (IPs) from {start_node} to {end_node}: {ip_path}")
+            #print(f"Total time for the path: {total_time}")
             return ip_path, total_time
         except nx.NetworkXNoPath:
             print(f"No path found between {start_node} and {end_node}")
             return None, None
-        
-    def find_parents_by_ip(self, target_node):
+
+
+    def find_all_paths_and_parents(self, start_node, end_node, target_node):
         """
-        Finds the parents of a specific node and returns their IP addresses.
+        Finds all paths between two nodes and determines all possible parents of a specific node, showing parents as IPs.
+        
+        :param start_node: The starting node of the paths.
+        :param end_node: The destination node of the paths.
+        :param target_node: The node whose parents we want to find.
+        :return: A list of all paths, a set of all parents (IPs) for the target node.
         """
-        # List to store the parent IPs
-        parent_ips = []
+        try:
+            # Find all simple paths between start_node and end_node
+            all_paths = list(nx.all_simple_paths(self.graph, source=start_node, target=end_node))
+            
+            # Dictionary mapping nodes to their IPs (assumes this exists in your class)
+            node_to_ip = {record["origin_node"]: record["origin"] for record in self.connection_data_log}
+            
+            # Set to store unique parents of the target node as IPs
+            parents_ips = set()
+            
+            for path in all_paths:
+                # Check if the target_node exists in the path
+                if target_node in path:
+                    # Get the index of the target_node in the path
+                    index = path.index(target_node)
+                    # If target_node is not the first node, add its parent
+                    if index > 0:
+                        parent_node = path[index - 1]
+                        parent_ip = node_to_ip.get(parent_node, "Unknown IP")
+                        parents_ips.add(parent_ip)
+            
+            print(f"All paths from {start_node} to {end_node}: {all_paths}")
+            print(f"All parents of {target_node} as IPs: {parents_ips}")
+            
+            return all_paths, parents_ips
+        except nx.NetworkXNoPath:
+            print(f"No paths found between {start_node} and {end_node}")
+            return None, None
 
-        # Iterate through the connection data log to find edges leading to the target node
-        for record in self.connection_data_log:
-            if record["dest_node"] == target_node:
-                # Add the IP of the origin node (parent)
-                parent_ips.append(record["origin"])
 
-        if parent_ips:
-            print(f"Parents of node {target_node} (IPs): {parent_ips}")
-        else:
-            print(f"No parents found for node {target_node}.")
+    def build_tree_from_graph(self, root):
+        """
+        Constructs a tree from the current graph using shortest paths from the specified root.
+        Saves the tree to the `self.tree` attribute.
+        """
+        if root not in self.graph:
+            raise ValueError(f"Root node {root} is not in the graph.")
         
-        return parent_ips
-
+        # Compute shortest paths from the root to all nodes
+        shortest_paths = nx.single_source_dijkstra_path(self.graph, source=root, weight='weight')
         
+        # Create a new graph for the tree
+        tree = nx.Graph()
 
+        # Add nodes and edges based on the shortest paths
+        for target, path in shortest_paths.items():
+            if len(path) > 1:  # Skip the root node itself
+                for i in range(len(path) - 1):
+                    origin, dest = path[i], path[i + 1]
+                    weight = self.graph[origin][dest]['weight']
+                    tree.add_edge(origin, dest, weight=weight)
+        
+        # Save the tree in memory
+        self.tree = tree
+        #print(f"Tree built from graph with root {root} and saved in memory.")
 
+    
+    def display_tree_in_terminal(self, root):
+        """
+        Displays the tree structure stored in `self.tree` in the terminal as a hierarchy.
+        """
+        if self.tree is None:
+            print("No tree has been built yet. Build a tree first.")
+            return
 
+        if root not in self.tree:
+            print(f"Root node {root} is not in the tree.")
+            return
+
+        def display_node(node, level=0, visited=None):
+            if visited is None:
+                visited = set()
+
+            visited.add(node)
+            print("  " * level + f"- {node}")
+
+            # Traverse neighbors (children) in the tree
+            for neighbor in self.tree.neighbors(node):
+                if neighbor not in visited:
+                    display_node(neighbor, level + 1, visited)
+
+        print("Tree Structure:")
+        display_node(root)
+
+    def get_parent(self, node, root):
+        """
+        Returns the parent of the given node in the tree.
+        
+        :param node: The node whose parent is to be found.
+        :param root: The root of the tree.
+        :return: The parent node, or None if the node is the root or not found.
+        """
+        if self.tree is None:
+            print("No tree has been built yet. Build a tree first.")
+            return None
+
+        if node not in self.tree:
+            print(f"Node {node} is not in the tree.")
+            return None
+
+        if node == root:
+            print(f"Node {node} is the root and has no parent.")
+            return None
+
+        # Find the shortest path from the root to the node
+        path = nx.shortest_path(self.tree, source=root, target=node, weight=None)
+
+        # The parent is the second-to-last node in the path
+        parent = path[-2]
+        return parent
 
     def rtspSocket(self):
         try:
@@ -167,15 +308,26 @@ class Server:
         except:
             print("[Usage: Server.py Server_port]\n")
             SERVER_PORT = 2000
-        rtspSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        rtspSocket.bind(('', SERVER_PORT))
-        rtspSocket.listen(5)        
 
-        # Receive client info (address,port) through RTSP/TCP session
+        # Create a UDP socket
+        rtspSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        rtspSocket.bind(('', SERVER_PORT))
+        print(f"RTSP Server is listening on UDP port {SERVER_PORT}.")
+
         while True:
             clientInfo = {}
-            clientInfo['rtspSocket'] = rtspSocket.accept()
-            ServerWorker(clientInfo).run()	
+            
+            # Receive RTSP request from client
+            try:
+                data, clientAddress = rtspSocket.recvfrom(40280)  # Buffer size is 1024 bytes
+                if data:
+                    print(f"Received data from {clientAddress}:\n{data.decode('utf-8')}")
+                    clientInfo['rtspSocket'] = (rtspSocket, clientAddress)
+                    # Handle the client request in a new ServerWorker
+                    ServerWorker(clientInfo).run()
+            except Exception as e:
+                print(f"Error receiving data: {e}")
+
 
 	
                 
@@ -198,7 +350,6 @@ class Server:
 
             
         
-        # Verifica se o arquivo foi lido corretamente
         if not groups:
             print("Erro: grupos de IP não carregados corretamente. Verifique o arquivo config.txt.")
             return
@@ -239,14 +390,21 @@ class Server:
                     parsed_values = message.replace("TIME :", "").strip(",").split(",")
 
                     ip = parsed_values[0]
-                    client_ip = parsed_values[1]
+                    client_ip2 = parsed_values[1]
                     round_trip_time = float(parsed_values[2])
 
                     
-                    self.save_connection_data(ip, client_ip,round_trip_time)
+                    self.save_connection_data(ip, client_ip2,round_trip_time)
+                    node_tree = self.get_node_by_ip(client_ip)
+                    self.build_tree_from_graph('15')
+                    parent = self.get_parent(node_tree,'15')
+                    
+                    response_tree = f"PARENT: {parent}"
+                    sock.sendto(response_tree.encode(),(client_ip,24000))
 
 
                 if message.startswith("REQ:"):
+                    print(message)
                     node = self.get_node_by_ip(client_ip)
                     node_host = self.get_node_by_ip('10.0.17.10')
                     start_node = node_host
@@ -260,9 +418,12 @@ class Server:
                         content = message.split("REQ: ")[1].strip()
                         videofile, client_ip2 = content.split(",")
 
+                        paths,dads = self.find_all_paths_and_parents(start_node,'10','10')
+
+                       
 
 
-                        path = path[1:]  # Remove the first element
+                        path = path[1:]  
                         path2first = path2[0]
                         next = path2first[1]
                         print(next)
@@ -283,8 +444,6 @@ class Server:
                     print(extracted_ips)
                     for ip in extracted_ips:
                         node_ip = self.get_node_by_ip(ip)
-                        node_ips = self.get_ips_per_node(node_ip)
-                        print(node_ips)
                     response_message = f"Pontos de Presenca: {self.points_presence}"
                     sock.sendto(response_message.encode(), addr)
 
@@ -297,10 +456,10 @@ class Server:
                     
 
 
-                # Verificar se a mensagem é do tipo "HELLO : ID-NODO"
+                # Verificar se a mensagem é do tipo "HELLO
                 if message.startswith("HELLO :"):
                     node_id = self.get_node_by_ip(client_ip)
-                    print(f"Mensagem recebida do Nodo {node_id}")
+                    #print(f"Mensagem recebida do Nodo {node_id}")
                     
                     # Verifica se o IP está no grupo da esquerda
                     for left_ips, right_ips in groups.items():
