@@ -38,8 +38,9 @@ class ServerWorker:
         """Receive RTSP request from the client."""
         connSocket = self.clientInfo['rtspSocket'][0]
         while True:            
-            data = connSocket.recv(256)
+            data = connSocket.recv(40000)
             if data:
+                print(data)
                 print("Data received:\n" + data.decode("utf-8"))
                 self.processRtspRequest(data.decode("utf-8"))
 
@@ -156,14 +157,23 @@ class ServerWorker:
         
     def replyRtsp(self, code, seq):
         """Send RTSP reply to the client."""
+        # Get the client address and port from the 'rtspSocket'
+        connSocket = self.clientInfo['rtspSocket'][0]
+        clientAddress = self.clientInfo['rtspSocket'][1]
+        print(f"client{clientAddress}")
+
         if code == self.OK_200:
-            #print("200 OK")
-            reply = 'RTSP/1.0 200 OK\nCSeq: ' + seq + '\nSession: ' + str(self.clientInfo['session'])
-            connSocket = self.clientInfo['rtspSocket'][0]
-            connSocket.send(reply.encode())
+            # Reply with 200 OK
+            reply = f'RTSP/1.0 200 OK\nCSeq: {seq}\nSession: {self.clientInfo["session"]}\n'
+            connSocket.sendto(reply.encode(), clientAddress)
         
         # Error messages
         elif code == self.FILE_NOT_FOUND_404:
             print("404 NOT FOUND")
+            reply = f'RTSP/1.0 404 Not Found\nCSeq: {seq}\nSession: {self.clientInfo["session"]}\n'
+            connSocket.sendto(reply.encode(), clientAddress)
+        
         elif code == self.CON_ERR_500:
             print("500 CONNECTION ERROR")
+            reply = f'RTSP/1.0 500 Internal Server Error\nCSeq: {seq}\nSession: {self.clientInfo["session"]}\n'
+            connSocket.sendto(reply.encode(), clientAddress)
